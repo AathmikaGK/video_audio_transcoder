@@ -1,0 +1,190 @@
+
+
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Video to Audio and Transcript Converter</title>
+  <!-- <subtitle>A simple web app for converting video files to audio and transcripts</subtitle> -->
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; margin: 40px; max-width: 900px; }
+    .card { border: 1px solid #ddd; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    label { display:block; margin: 8px 0 4px; }
+    input[type=text], input[type=password] { width: 280px; padding: 8px; }
+    button { padding: 8px 12px; border-radius: 8px; border: 1px solid #333; cursor: pointer; }
+    code { background: #f4f4f4; padding: 2px 6px; border-radius: 6px; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { border-bottom: 1px solid #eee; padding: 8px; text-align: left; }
+    .hidden { display: none; }
+    .muted { opacity: 0.6; pointer-events: none; }
+    #status { margin-left: 10px; font-size: 0.95em; }
+  </style>
+</head>
+<body>
+  <h1>Video to Audio and Transcript Converter</h1>
+  <p>A simple web app for converting video files to audio and transcripts</p>
+
+  <div class="card" id="authCard">
+    <h3>Login</h3>
+    <p>Seeded users: <code>admin / admin123</code> (admin) or <code>alice / password</code> (user)</p>
+    <label>Username</label><input id="u" type="text" value="alice">
+    <label>Password</label><input id="p" type="password" value="password">
+    <button onclick="login()">Login</button>
+    <button class="hidden" id="logoutBtn" onclick="logout()">Logout</button>
+    <span id="me"></span>
+    <div id="status"></div>
+  </div>
+
+  <div class="card hidden" id="uploadCard">
+    <h3>Upload Video</h3>
+    <input id="file" type="file" accept="video/*">
+    <button onclick="upload()">Upload</button>
+    <div id="uploadStatus"></div>
+  </div>
+
+  <div class="card hidden" id="filesCard">
+    <h3>Your Files</h3>
+    <button onclick="loadFiles()">Refresh</button>
+    <table id="filesTbl"></table>
+  </div>
+
+  <div class="card hidden" id="jobsCard">
+    <h3>Your Jobs</h3>
+    <button onclick="loadJobs()">Refresh</button>
+    <table id="jobsTbl"></table>
+  </div>
+
+<script>
+const API = location.origin;
+// TIP: switch to sessionStorage if you want tokens to disappear on browser close
+let token = localStorage.getItem("token") || "";
+
+const el = (id) => document.getElementById(id);
+function showAuthedUI(isAuthed){
+  // Toggle cards based on auth state
+  el('uploadCard').classList.toggle('hidden', !isAuthed);
+  el('filesCard').classList.toggle('hidden', !isAuthed);
+  el('jobsCard').classList.toggle('hidden', !isAuthed);
+  el('logoutBtn').classList.toggle('hidden', !isAuthed);
+}
+
+async function checkToken(){
+  if(!token){ showAuthedUI(false); el('me').innerText = ""; el('status').innerText = "Not logged in."; return; }
+  try{
+    const r = await fetch(API + "/me", { headers: { Authorization: "Bearer " + token } });
+    if(!r.ok) throw new Error("Invalid token");
+    const meJ = await r.json();
+    el('me').innerText = `Logged in as ${meJ.username} (${meJ.role})`;
+    el('status').innerText = "";
+    showAuthedUI(true);
+    // optional: auto-load data when already authenticated
+    loadFiles(); loadJobs();
+  }catch(e){
+    // bad/expired token -> clear and force login
+    localStorage.removeItem("token");
+    token = "";
+    el('me').innerText = "";
+    el('status').innerText = "Session expired. Please log in.";
+    showAuthedUI(false);
+  }
+}
+
+async function login(){
+  const fd = new FormData();
+  fd.append("username", el('u').value);
+  fd.append("password", el('p').value);
+  fd.append("grant_type", "password");
+  const r = await fetch(API + "/auth/login", { method:"POST", body: fd });
+  if(!r.ok){ alert("Login failed"); return; }
+  const j = await r.json();
+  token = j.access_token;
+  localStorage.setItem("token", token);
+  await checkToken();
+}
+
+function logout(){
+  localStorage.removeItem("token");
+  token = "";
+  showAuthedUI(false);
+  el('me').innerText = "";
+  el('status').innerText = "Logged out.";
+  // Optionally clear tables
+  el('filesTbl').innerHTML = "";
+  el('jobsTbl').innerHTML = "";
+}
+
+function requireToken(){
+  if(!token){ alert("Please log in first."); throw new Error("No token"); }
+}
+
+async function upload(){
+  requireToken();
+  const f = el("file").files[0];
+  if(!f){ alert("Choose a file"); return; }
+  const fd = new FormData();
+  fd.append("f", f);
+  const r = await fetch(API + "/upload/video", { method:"POST", body:fd, headers:{ Authorization:"Bearer "+token } });
+  if(!r.ok){ alert("Upload failed"); return; }
+  const j = await r.json();
+  el("uploadStatus").innerText = "Uploaded: " + j.original_filename + " (id="+j.id+")";
+  loadFiles();
+}
+
+async function loadFiles(){
+  requireToken();
+  const r = await fetch(API + "/files", { headers:{ Authorization: "Bearer " + token }});
+  if(!r.ok){ if(r.status===401){ logout(); } return; }
+  const j = await r.json();
+  const tbl = el("filesTbl");
+  tbl.innerHTML = "<tr><th>ID</th><th>Original</th><th>Created</th><th>Actions</th></tr>"
+  j.forEach(f => {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td>${f.id}</td><td>${f.original_filename}</td><td>${new Date(f.created_at).toLocaleString()}</td>
+    <td><button onclick="startJob(${f.id})">Process</button> <button onclick="delFile(${f.id})">Delete</button></td>`;
+    tbl.appendChild(tr);
+  });
+}
+
+async function startJob(fileId){
+  requireToken();
+  const r = await fetch(API + "/process/" + fileId, { method:"POST", headers:{ Authorization:"Bearer "+token }});
+  if(!r.ok){ if(r.status===401){ logout(); } else { alert("Failed to queue job"); } return; }
+  const j = await r.json();
+  alert("Job queued id=" + j.id);
+  loadJobs();
+}
+
+async function loadJobs(){
+  requireToken();
+  const r = await fetch(API + "/jobs?page=1&page_size=100", { headers:{ Authorization: "Bearer " + token }});
+  if(!r.ok){ if(r.status===401){ logout(); } return; }
+  const j = await r.json();
+  const tbl = el("jobsTbl");
+  tbl.innerHTML = "<tr><th>ID</th><th>Status</th><th>Updated</th><th>Actions</th></tr>";
+  j.forEach(job => {
+    const tr = document.createElement("tr");
+    let actions = "";
+    if(job.status === "done"){
+      // Include token in query so <a> works without custom header
+      actions = `<a href="${API}/download/audio/${job.id}?access_token=${token}" target="_blank">Audio</a> | ` +
+                `<a href="${API}/download/transcript/${job.id}?access_token=${token}" target="_blank">Transcript</a>`;
+    }
+    tr.innerHTML = `<td>${job.id}</td><td>${job.status}</td><td>${new Date(job.updated_at).toLocaleString()}</td><td>${actions}</td>`;
+    tbl.appendChild(tr);
+  });
+}
+
+async function delFile(id){
+  requireToken();
+  if(!confirm("Delete file "+id+" ?")) return;
+  const r = await fetch(API + "/files/" + id, { method:"DELETE", headers:{ Authorization: "Bearer " + token }});
+  if(r.ok){ loadFiles(); loadJobs(); } else if(r.status===401){ logout(); }
+}
+
+// On load: verify token and show/hide UI accordingly
+checkToken();
+</script>
+</body>
+</html>
+

@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# Secrets & env
+.env
+*.db
+
+# Storage (large media files)
+storage/
+
+# OS junk
+.DS_Store
+Thumbs.db
+
+# Git
+.git
+.gitignore
+
+# Backups
+*copy.yml
+Dockerfile copy
+
+evthy/
+*.db
+*copy
+
