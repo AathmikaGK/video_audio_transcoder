@@ -20,5 +20,20 @@ class Settings:
     # VOSK_MODEL_PATH: str = os.getenv("VOSK_MODEL_PATH", "/opt/vosk-model-small-en-us-0.15")
     VOSK_MODEL_PATH: str = os.getenv("VOSK_MODEL_PATH", "/opt/vosk/model")
 
+        # config.py
+    COGNITO_REGION = "ap-southeast-2"
+    COGNITO_USERPOOL_ID = "ap-southeast-2_lOInK99x5"
+    COGNITO_CLIENT_ID = "1ingln7v6suqin0roc0i53ehl1"
+    COGNITO_CLIENT_SECRET = "aoel06ss40eghu8damv28ggqi7bjvohde2evn13o5ra5l18colo"
+    COGNITO_DOMAIN = "myapp.auth.ap-southeast-2.amazoncognito.com"
+    FLASK_SECRET_KEY = "mysupersecretkey"
+
+
+
 
 settings = Settings()
+"""set COGNITO_REGION=ap-southeast-2
+set COGNITO_USERPOOL_ID=ap-southeast-2_lOInK99x5
+set COGNITO_APP_CLIENT_ID=545k2omsj12a55mmqbn9rhuoqc
+set COGNITO_APP_CLIENT_SECRET=
+"""

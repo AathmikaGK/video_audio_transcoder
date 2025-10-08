@@ -1,192 +1,87 @@
-import os, shutil, uuid
-from datetime import timedelta
-from typing import List, Optional
+from flask import Flask, render_template, request,  redirect, url_for
+from app.Cognito import signup_user, confirm_user, login_user, token_required, email_mfa
+from dotenv import load_dotenv
+import os
+from starlette.middleware.sessions import SessionMiddleware
 
-from fastapi import FastAPI, Depends, UploadFile, File, HTTPException, status, BackgroundTasks, Query
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, HTMLResponse
-from fastapi.staticfiles import StaticFiles
-from fastapi.security import OAuth2PasswordRequestForm
-from sqlalchemy.orm import Session
-from sqlalchemy import desc
+app = Flask(__name__)
 
-from .config import settings
-from .database import Base, engine, SessionLocal
-from .models import User, File as FileModel, Job, JobStatus, Role
-from .schemas import Token, UserOut, FileOut, JobOut
-from .auth import get_db, get_password_hash, verify_password, create_access_token, get_current_user, require_admin
-from .tasks import process_job
+# --- Public Endpoints --- #
+@app.route("/")
+def index():
+    return redirect(url_for("static", filename="claude.html"))
 
-# app = FastAPI(title=settings.PROJECT_NAME)
-app = FastAPI(
-    title=settings.PROJECT_NAME,
-    docs_url=None,
-    redoc_url=None,
-    openapi_url=None,
-)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-from fastapi.responses import RedirectResponse
+@app.route("/signup", methods=["POST"])
+def signup():
+    data = request.json
+    resp = signup_user(data["username"], data["password"], data["email"])
+    # If Cognito returned an error dict
+    if "error" in resp:
+        return {"error": resp["error"]}, 400
+    
+    return {"message": "User registered", "user_sub": resp["UserSub"]}
 
-@app.get("/", include_in_schema=False)
-def root():
-    return RedirectResponse(url="/app/")
-# Mount static web client
-static_dir = os.path.join(os.path.dirname(__file__), "static")
-app.mount("/app", StaticFiles(directory=static_dir, html=True), name="static")
+@app.route("/confirm", methods=["POST"])
+def confirm_signup():
+    data = request.json
+    resp = confirm_user(data["username"], data["code"])
+    if "error" in resp:
+        return {"error": resp["error"]}, 400
+    return {"message": "User confirmed"}
 
-# Create DB tables
-Base.metadata.create_all(bind=engine)
+@app.route("/login", methods=["POST", "GET"])
+def login():
+    data = request.json
+    result = login_user(data["username"], data["password"])
+    print(result)
+    #request.session["cognito_session"] = session_id
+    if result.get("ChallengeName"):
+        print("challenge name: email otp")
+        session_id = result["Session"]
+        return {"message": "MFA required", "session": session_id}
+    
+    if "AuthenticationResult" in result:
+        tokens = result["AuthenticationResult"]
+        return {
+            "message": "Login successful",
+            "id_token": tokens.get("IdToken"),
+            "access_token": tokens.get("AccessToken"),
+            "refresh_token": tokens.get("RefreshToken")
+        }
 
-# Seed users if empty (two users, different roles)
-def seed_users():
-    db = SessionLocal()
-    try:
-        if db.query(User).count() == 0:
-            u1 = User(username="admin", password_hash=get_password_hash("admin123"), role=Role.admin)
-            u2 = User(username="alice", password_hash=get_password_hash("password"), role=Role.user)
-            db.add_all([u1, u2])
-            db.commit()
-    finally:
-        db.close()
-seed_users()
+    if "error" in result:
+        print("❌ Cognito error:", result["error"])
+        return {"error": result["error"]}, 401
+    
+    return {"error": "Unexpected Cognito response", "data": result}, 400
+       
+@app.route("/verify-mfa", methods=["POST"])
+def verify_mfa():
+    data = request.json
+    session_id = data["session"]
+    
+    # get otp in the front end, otp field should be hidden until prompted, it should must be prompted here
+    mfa_result = email_mfa(data["username"], session_id, data["mfa_code"])
+    if not mfa_result["success"]:
+        return {"error": mfa_result.get("error") or f"Challenge: {mfa_result.get('challenge')}"}, 401
+    
+    id_token = mfa_result["IdToken"]
+    access_token = mfa_result[ "AccessToken"]
+    refresh_token = mfa_result["RefreshToken"]
+    return {
+    "id_token": id_token,
+    "access_token": access_token,
+    "refresh_token": refresh_token
+}
 
-@app.get("/", response_class=HTMLResponse)
-def root():
-    return '<h2>Vid2AudioText API</h2><p>Open <a href="/docs">/docs</a> for API docs or <a href="/app">/app</a> for the web UI.</p>'
+# --- Protected Endpoint --- #
 
-# ---------- AUTH ----------
-@app.post("/auth/login", response_model=Token, tags=["auth"])
-def login(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
-    user = db.query(User).filter(User.username == form_data.username).first()
-    if not user or not verify_password(form_data.password, user.password_hash):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Incorrect username or password")
-    token = create_access_token({"sub": user.username, "role": user.role.value})
-    return {"access_token": token, "token_type": "bearer"}
+@app.route("/videos", methods=["GET"])
+@token_required
+def videos(user):
+    username = user["cognito:username"]
+    # pretend we looked up videos belonging to username
+    return {"videos": [f"{username}_video1.mp4", f"{username}_video2.mp4"]}
 
-@app.get("/me", response_model=UserOut, tags=["auth"])
-def me(user: User = Depends(get_current_user)):
-    return user
-
-# ---------- UPLOAD & FILES ----------
-@app.post("/upload/video", response_model=FileOut, tags=["files"])
-def upload_video(f: UploadFile = File(...), user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    os.makedirs(settings.VIDEO_DIR, exist_ok=True)
-    ext = os.path.splitext(f.filename)[1]
-    safe_name = f"{uuid.uuid4().hex}{ext}"
-    stored_path = os.path.join(settings.VIDEO_DIR, safe_name)
-
-    with open(stored_path, "wb") as out:
-        shutil.copyfileobj(f.file, out)
-
-    fm = FileModel(owner_id=user.id, original_filename=f.filename, stored_path=stored_path)
-    db.add(fm); db.commit(); db.refresh(fm)
-    return fm
-
-@app.get("/files", response_model=List[FileOut], tags=["files"])
-def list_files(skip: int = 0, limit: int = 20, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    q = db.query(FileModel).filter(FileModel.owner_id == user.id).order_by(desc(FileModel.created_at))
-    return q.offset(skip).limit(limit).all()
-
-# Admin can delete any file; user can delete own
-@app.delete("/files/{file_id}", tags=["files"])
-def delete_file(file_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    fm = db.get(FileModel, file_id)
-    if not fm:
-        raise HTTPException(404, "File not found")
-    if user.role != Role.admin and fm.owner_id != user.id:
-        raise HTTPException(403, "Not allowed")
-    # Remove physical file
-    try:
-        if os.path.exists(fm.stored_path): os.remove(fm.stored_path)
-    except Exception:
-        pass
-    # Cascade delete jobs handled by FK ON DELETE? Not set, remove manually
-    jobs = db.query(Job).filter(Job.file_id == fm.id).all()
-    for j in jobs:
-        if j.audio_path and os.path.exists(j.audio_path):
-            try: os.remove(j.audio_path)
-            except Exception: pass
-        if j.transcript_path and os.path.exists(j.transcript_path):
-            try: os.remove(j.transcript_path)
-            except Exception: pass
-        db.delete(j)
-    db.delete(fm); db.commit()
-    return {"ok": True}
-
-# ---------- JOBS / PROCESS ----------
-@app.post("/process/{file_id}", response_model=JobOut, tags=["jobs"])
-def create_job(file_id: int, background: BackgroundTasks, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    fm = db.get(FileModel, file_id)
-    if not fm or (user.role != Role.admin and fm.owner_id != user.id):
-        raise HTTPException(404, "File not found")
-    job = Job(owner_id=user.id, file_id=fm.id, status=JobStatus.queued)
-    db.add(job); db.commit(); db.refresh(job)
-
-    # Launch background job
-    background.add_task(run_job_task, job.id)
-    return job
-
-def run_job_task(job_id: int):
-    db = SessionLocal()
-    try:
-        process_job(db, job_id)
-    finally:
-        db.close()
-
-@app.get("/jobs", response_model=List[JobOut], tags=["jobs"])
-def list_jobs(
-    status: Optional[JobStatus] = Query(None, description="Filter by status"),
-    sort: Optional[str] = Query("-created_at", description="Sort by field, prefix '-' for desc"),
-    page: int = 1,
-    page_size: int = 20,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-):
-    q = db.query(Job).filter(Job.owner_id == user.id)
-    if status:
-        q = q.filter(Job.status == status)
-    # Sorting
-    if sort:
-        desc_order = sort.startswith("-")
-        field = sort[1:] if desc_order else sort
-        col = getattr(Job, field, None)
-        if col is not None:
-            q = q.order_by(desc(col) if desc_order else col.asc())
-    offset = (page - 1) * page_size
-    return q.offset(offset).limit(page_size).all()
-
-@app.get("/jobs/{job_id}", response_model=JobOut, tags=["jobs"])
-def get_job(job_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    job = db.get(Job, job_id)
-    if not job or (user.role != Role.admin and job.owner_id != user.id):
-        raise HTTPException(404, "Job not found")
-    return job
-
-@app.get("/download/audio/{job_id}", response_class=FileResponse, tags=["download"])
-def download_audio(job_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    job = db.get(Job, job_id)
-    if not job or (user.role != Role.admin and job.owner_id != user.id):
-        raise HTTPException(404, "Not found")
-    if job.status != JobStatus.done or not job.audio_path or not os.path.exists(job.audio_path):
-        raise HTTPException(400, "Audio not available")
-    return FileResponse(job.audio_path, media_type="audio/mpeg", filename=os.path.basename(job.audio_path))
-
-@app.get("/download/transcript/{job_id}", response_class=FileResponse, tags=["download"])
-def download_transcript(job_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    job = db.get(Job, job_id)
-    if not job or (user.role != Role.admin and job.owner_id != user.id):
-        raise HTTPException(404, "Not found")
-    if job.status != JobStatus.done or not job.transcript_path or not os.path.exists(job.transcript_path):
-        raise HTTPException(400, "Transcript not available")
-    return FileResponse(job.transcript_path, media_type="text/plain", filename=os.path.basename(job.transcript_path))
-
-# ---------- HEALTH ----------
-@app.get("/health", tags=["meta"])
-def health():
-    return {"status": "ok"}
+if __name__ == "__main__":
+    app.run(debug=True)
