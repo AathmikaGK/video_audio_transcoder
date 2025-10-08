@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request,  redirect, url_for
+from flask import Flask, render_template, request,  redirect, url_for, jsonify
 from app.Cognito import signup_user, confirm_user, login_user, token_required, email_mfa
 from dotenv import load_dotenv
 import os
@@ -68,11 +68,11 @@ def verify_mfa():
     id_token = mfa_result["IdToken"]
     access_token = mfa_result[ "AccessToken"]
     refresh_token = mfa_result["RefreshToken"]
-    return {
+    return  jsonify({
     "id_token": id_token,
     "access_token": access_token,
     "refresh_token": refresh_token
-}
+})
 
 # --- Protected Endpoint --- #
 
