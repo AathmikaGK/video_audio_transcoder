@@ -4,105 +4,433 @@
   <meta charset="utf-8">
   <title>Cognito Authentication</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 40px; }
-    .card { border: 1px solid #ccc; padding: 16px; margin-bottom: 20px; border-radius: 8px; max-width: 400px; }
-    input { display: block; margin: 8px 0; padding: 8px; width: 100%; }
-    button { padding: 8px 12px; border: 1px solid #333; border-radius: 6px; cursor: pointer; }
-    .result { margin-top: 10px; font-size: 0.9em; color: green; }
-    .error { color: red; }
+    body { 
+      font-family: Arial, sans-serif; 
+      margin: 0;
+      padding: 0;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      background-color: #f5f5f5;
+    }
+    .container {
+      width: 100%;
+      max-width: 400px;
+      padding: 20px;
+    }
+    .card { 
+      background: white;
+      border: 1px solid #ccc; 
+      padding: 30px; 
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    h1 {
+      text-align: center;
+      color: #333;
+      margin-bottom: 30px;
+    }
+    h2 {
+      margin-top: 0;
+      color: #333;
+    }
+    input { 
+      display: block; 
+      margin: 12px 0; 
+      padding: 10px; 
+      width: 100%;
+      box-sizing: border-box;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    button { 
+      padding: 10px 16px; 
+      border: none;
+      border-radius: 4px; 
+      cursor: pointer;
+      font-size: 14px;
+      width: 100%;
+      margin: 8px 0;
+      transition: background-color 0.3s;
+    }
+    .primary-btn {
+      background-color: #007bff;
+      color: white;
+    }
+    .primary-btn:hover {
+      background-color: #0056b3;
+    }
+    .secondary-btn {
+      background-color: #6c757d;
+      color: white;
+    }
+    .secondary-btn:hover {
+      background-color: #545b62;
+    }
+    .google-btn {
+      background-color: white;
+      color: #444;
+      border: 1px solid #ddd;
+    }
+    .google-btn:hover {
+      background-color: #f8f9fa;
+    }
+    .link-btn {
+      background: none;
+      border: none;
+      color: #007bff;
+      text-decoration: underline;
+      cursor: pointer;
+      padding: 8px;
+      font-size: 14px;
+    }
+    .link-btn:hover {
+      color: #0056b3;
+    }
+    .result { 
+      margin-top: 12px; 
+      padding: 10px;
+      font-size: 0.9em;
+      border-radius: 4px;
+    }
+    .success {
+      background-color: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+    .error { 
+      background-color: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+    .hidden {
+      display: none;
+    }
+    .divider {
+      text-align: center;
+      margin: 20px 0;
+      color: #666;
+      position: relative;
+    }
+    .divider::before,
+    .divider::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      width: 45%;
+      height: 1px;
+      background-color: #ddd;
+    }
+    .divider::before {
+      left: 0;
+    }
+    .divider::after {
+      right: 0;
+    }
   </style>
 </head>
 <body>
-  <h1>Video to audio transcoder</h1>
+  <div class="container">
+    <h1>Video to Audio Transcoder</h1>
 
-  <!-- Sign Up -->
-  <div class="card">
-    <h2>Sign Up</h2>
-    <form id="signupForm">
-      <input type="text" id="signupUsername" placeholder="Username" required>
-      <input type="password" id="signupPassword" placeholder="Password" required>
-      <input type="email" id="signupEmail" placeholder="Email" required>
-      <button onclick="signup_user()">Sign Up</button>
-    </form>
-    <div id="signupResult" class="result"></div>
-  </div>
+    <!-- LOGIN FORM -->
+    <div id="loginCard" class="card">
+      <h2>Login</h2>
+      <form id="loginForm">
+        <input type="text" id="loginUsername" placeholder="Username" required>
+        <input type="password" id="loginPassword" placeholder="Password" required>
+        
+        <!-- MFA input - hidden by default, shown after login -->
+        <div id="mfaSection" class="hidden">
+          <input type="text" id="mfaCode" placeholder="Enter MFA Code from Email">
+          <button type="button" class="primary-btn" onclick="submitMFA()">Submit MFA</button>
+        </div>
+        
+        <!-- Login button - hidden after clicking login -->
+        <button type="submit" id="loginBtn" class="primary-btn">Login</button>
+      </form>
 
-  <!-- Confirm -->
-  <div class="card">
-    <h2>Confirm Sign Up</h2>
-    <form id="confirmForm">
-      <input type="text" id="confirmUsername" placeholder="Username" required>
-      <input type="text" id="confirmCode" placeholder="Confirmation Code" required>
-      <button onclick="confirm_user()">Confirm</button>
-    </form>
-    <div id="confirmResult" class="result"></div>
-  </div>
+      <div class="divider">or</div>
 
-  <!-- Login -->
-  <div class="card">
-    <h2>Login</h2>
-    <form id="loginForm">
-      <input type="text" id="loginUsername" placeholder="Username" required>
-      <input type="password" id="loginPassword" placeholder="Password" required>
-      <button onclick="login_user()">login</button>
-      <input type="otp" id="email_otp" placeholder="otp" required>
-    </form>
-    <div id="loginResult" class="result"></div>
+      <!-- Google Login Button - Non-functional placeholder -->
+      <button class="google-btn" onclick="loginWithGoogle()">
+        🔐 Login with Google
+      </button>
+
+      <div style="text-align: center; margin-top: 20px;">
+        <span style="color: #666;">Don't have an account?</span>
+        <button class="link-btn" onclick="showSignup()">Sign up</button>
+        <!-- signupuser was there earlierr -->
+      </div>
+
+      <div id="loginResult" class="result hidden"></div>
+    </div>
+
+    <!-- SIGNUP FORM -->
+    <div id="signupCard" class="card hidden">
+      <h2>Sign Up</h2>
+      <form id="signupForm">
+        <input type="email" id="signupEmail" placeholder="Email" required>
+        <input type="text" id="signupUsername" placeholder="Username" required>
+        <input type="password" id="signupPassword" placeholder="Password" required>
+        
+        <!-- Confirmation code input - hidden by default, shown after signup -->
+        <div id="confirmSection" class="hidden">
+          <input type="text" id="confirmCode" placeholder="Enter Confirmation Code from Email">
+          <button type="button" class="primary-btn" onclick="confirmSignup()">Submit Code</button>
+        </div>
+        
+        <!-- Signup button - hidden after clicking signup -->
+        <button type="submit" id="signupBtn" class="primary-btn" onclick="signup()">Sign Up</button>
+      </form>
+
+      <div class="divider">or</div>
+
+      <!-- Google Signup Button - Non-functional placeholder -->
+      <button class="google-btn" onclick="signupWithGoogle()">
+        🔐 Sign up with Google
+      </button>
+
+      <div style="text-align: center; margin-top: 20px;">
+        <button class="link-btn" onclick="showLogin()">Back to Login</button>
+      </div>
+
+      <div id="signupResult" class="result hidden"></div>
+    </div>
   </div>
 
   <script>
-    // Signup form
-    document.getElementById("signupForm").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const res = await fetch("/signup", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: document.getElementById("signupUsername").value,
-          password: document.getElementById("signupPassword").value,
-          email: document.getElementById("signupEmail").value
-        })
-      });
-      const data = await res.json();
-      document.getElementById("signupResult").textContent =
-        res.ok ? `✔️ ${data.message}` : `❌ ${data.error || JSON.stringify(data)}`;
-    });
+    // Global variable to store session ID from login response
+    let cognitoSession = null;
+    let currentUsername = null;
 
-    // Confirm form
-    document.getElementById("confirmForm").addEventListener("submit", async (e) => {
-      e.preventDefault();
-      const res = await fetch("/confirm", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: document.getElementById("confirmUsername").value,
-          code: document.getElementById("confirmCode").value
-        })
-      });
-      const data = await res.json();
-      document.getElementById("confirmResult").textContent =
-        res.ok ? `✔️ ${data.message}` : `❌ ${data.error || JSON.stringify(data)}`;
-    });
+    // ========== NAVIGATION FUNCTIONS ==========
+    
+    // Show signup form, hide login form
+    function showSignup() {
+      document.getElementById('loginCard').classList.add('hidden');
+      document.getElementById('signupCard').classList.remove('hidden');
+      // Reset forms
+      document.getElementById('signupForm').reset();
+      document.getElementById('signupResult').classList.add('hidden');
+      document.getElementById('confirmSection').classList.add('hidden');
+      document.getElementById('signupBtn').classList.remove('hidden');
+    }
 
-    // Login form
+    // Show login form, hide signup form
+    function showLogin() {
+      document.getElementById('signupCard').classList.add('hidden');
+      document.getElementById('loginCard').classList.remove('hidden');
+      // Reset forms
+      document.getElementById('loginForm').reset();
+      document.getElementById('loginResult').classList.add('hidden');
+      document.getElementById('mfaSection').classList.add('hidden');
+      document.getElementById('loginBtn').classList.remove('hidden');
+      cognitoSession = null;
+      currentUsername = null;
+    }
+
+    // ========== GOOGLE OAUTH FUNCTIONS (PLACEHOLDERS) ==========
+    
+    function loginWithGoogle() {
+      /* 
+        IMPLEMENTATION GUIDE:
+        
+        Option 1 - Using Cognito Hosted UI:
+        1. Configure Google as identity provider in AWS Cognito Console
+        2. Get your Cognito domain URL (e.g., https://your-domain.auth.region.amazoncognito.com)
+        3. Redirect to: 
+           window.location.href = 'https://your-domain.auth.region.amazoncognito.com/oauth2/authorize?' +
+             'client_id=YOUR_CLIENT_ID&' +
+             'response_type=code&' +
+             'scope=email+openid+profile&' +
+             'redirect_uri=YOUR_REDIRECT_URI';
+        
+        Option 2 - Using Backend Endpoint:
+        1. Create /auth/google endpoint in main.py that handles OAuth flow
+        2. Redirect: window.location.href = '/auth/google';
+        3. Backend will handle Google OAuth and return tokens
+      */
+      alert('Google login not yet implemented. See code comments for implementation guide.');
+    }
+
+    function signupWithGoogle() {
+      // Same implementation as loginWithGoogle - Google OAuth doesn't distinguish signup vs login
+      loginWithGoogle();
+    }
+
+    // ========== LOGIN FLOW ==========
+    
     document.getElementById("loginForm").addEventListener("submit", async (e) => {
       e.preventDefault();
-      const res = await fetch("/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username: document.getElementById("loginUsername").value,
-          password: document.getElementById("loginPassword").value
-        })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        localStorage.setItem("id_token", data.id_token);
-        document.getElementById("loginResult").textContent = `✔️ Logged in as ${document.getElementById("loginUsername").value}`;
-      } else {
-        document.getElementById("loginResult").textContent = `❌ ${data.error || JSON.stringify(data)}`;
+      
+      const username = document.getElementById("loginUsername").value;
+      const password = document.getElementById("loginPassword").value;
+      
+      // Store username for MFA submission
+      currentUsername = username;
+
+      try {
+        const res = await fetch("/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password })
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok) {
+          // Store session ID from backend response
+          cognitoSession = data.session;
+          
+          // Hide login button and show MFA section
+          document.getElementById('loginBtn').classList.add('hidden');
+          document.getElementById('mfaSection').classList.remove('hidden');
+          
+          showMessage('loginResult', '✔️ MFA code sent to your email. Please check your inbox.', 'success');
+        } else {
+          showMessage('loginResult', `❌ ${data.error || 'Login failed'}`, 'error');
+        }
+      } catch (error) {
+        showMessage('loginResult', `❌ Error: ${error.message}`, 'error');
       }
     });
+
+    // Submit MFA code
+    async function submitMFA() {
+      const mfaCode = document.getElementById('mfaCode').value.trim();
+      
+      if (!mfaCode) {
+        showMessage('loginResult', '❌ Please enter MFA code', 'error');
+        return;
+      }
+
+      if (!cognitoSession) {
+        showMessage('loginResult', '❌ Session expired. Please login again.', 'error');
+        return;
+      }
+
+      try {
+        const res = await fetch("/verify-mfa", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: currentUsername,
+            mfa_code: mfaCode,
+            session: cognitoSession  // Send session back to backend
+          })
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok) {
+          // Store the ID token for authenticated requests
+          sessionStorage.setItem('id_token', data.id_token);
+          sessionStorage.setItem('access_token', data.access_token);
+          sessionStorage.setItem('refresh_token', data.refresh_token);
+          sessionStorage.setItem('username', currentUsername);
+          // Debug: Verify storage
+          console.log('Tokens stored:', {
+            id_token: sessionStorage.getItem('id_token') ? 'saved' : 'failed',
+            access_token: sessionStorage.getItem('access_token') ? 'saved' : 'failed',
+            username: sessionStorage.getItem('username')
+          });
+                    
+          showMessage('loginResult', '✔️ Login successful! Redirecting...', 'success');
+          
+          // Redirect to jobs page 
+          window.location.href = '/index2.html';
+          
+        } else {
+          showMessage('loginResult', `❌ ${data.error || 'MFA verification failed'}`, 'error');
+        }
+      } catch (error) {
+        showMessage('loginResult', `❌ Error: ${error.message}`, 'error');
+      }
+    }
+
+    // ========== SIGNUP FLOW ==========
+    
+    document.getElementById("signupForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      
+      const email = document.getElementById("signupEmail").value;
+      const username = document.getElementById("signupUsername").value;
+      const password = document.getElementById("signupPassword").value;
+      
+      // Store username for confirmation
+      currentUsername = username;
+
+      try {
+        const res = await fetch("/signup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password, email })
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok) {
+          // Hide signup button and show confirmation section
+          document.getElementById('signupBtn').classList.add('hidden');
+          document.getElementById('confirmSection').classList.remove('hidden');
+          
+          showMessage('signupResult', '✔️ ' + data.message + ' Please check your email for confirmation code.', 'success');
+        } else {
+          showMessage('signupResult', `❌ ${data.error || 'Signup failed'}`, 'error');
+        }
+      } catch (error) {
+        showMessage('signupResult', `❌ Error: ${error.message}`, 'error');
+      }
+    });
+
+    // Confirm signup with email code
+    async function confirmSignup() {
+      const code = document.getElementById('confirmCode').value.trim();
+      
+      if (!code) {
+        showMessage('signupResult', '❌ Please enter confirmation code', 'error');
+        return;
+      }
+
+      try {
+        const res = await fetch("/confirm", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            username: currentUsername,
+            code: code
+          })
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok) {
+          showMessage('signupResult', '✔️ ' + data.message + ' Redirecting to login...', 'success');
+          
+          // Automatically show login form after 2 seconds
+          setTimeout(() => {
+            showLogin();
+          }, 2000);
+        } else {
+          showMessage('signupResult', `❌ ${data.error || 'Confirmation failed'}`, 'error');
+        }
+      } catch (error) {
+        showMessage('signupResult', `❌ Error: ${error.message}`, 'error');
+      }
+    }
+
+    // ========== HELPER FUNCTION ==========
+    
+    // Display success or error messages
+    function showMessage(elementId, message, type) {
+      const element = document.getElementById(elementId);
+      element.textContent = message;
+      element.className = 'result ' + type;
+      element.classList.remove('hidden');
+    }
   </script>
 </body>
 </html>

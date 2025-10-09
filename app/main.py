@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request,  redirect, url_for, jsonify
+from flask import Flask, render_template, request,  redirect, url_for, jsonify, send_from_directory
 from app.Cognito import signup_user, confirm_user, login_user, token_required, email_mfa
 from dotenv import load_dotenv
 import os
@@ -9,7 +9,7 @@ app = Flask(__name__)
 # --- Public Endpoints --- #
 @app.route("/")
 def index():
-    return redirect(url_for("static", filename="claude.html"))
+    return redirect(url_for("static", filename="login.html"))
 
 @app.route("/signup", methods=["POST"])
 def signup():
@@ -75,13 +75,10 @@ def verify_mfa():
 })
 
 # --- Protected Endpoint --- #
-
-@app.route("/videos", methods=["GET"])
-@token_required
-def videos(user):
-    username = user["cognito:username"]
-    # pretend we looked up videos belonging to username
-    return {"videos": [f"{username}_video1.mp4", f"{username}_video2.mp4"]}
+@app.route("/index2.html")
+def jobs_page():
+    """Serve the jobs dashboard page"""
+    return send_from_directory('static', 'index2.html')
 
 if __name__ == "__main__":
     app.run(debug=True)
