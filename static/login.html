@@ -331,12 +331,13 @@
           sessionStorage.setItem('access_token', data.access_token);
           sessionStorage.setItem('refresh_token', data.refresh_token);
           sessionStorage.setItem('username', currentUsername);
-          // Debug: Verify storage
-          console.log('Tokens stored:', {
-            id_token: sessionStorage.getItem('id_token') ? 'saved' : 'failed',
-            access_token: sessionStorage.getItem('access_token') ? 'saved' : 'failed',
-            username: sessionStorage.getItem('username')
-          });
+          // DEBUG: Verify storage immediately
+          console.log('=== TOKEN STORAGE DEBUG ===');
+          console.log('id_token stored:', !!sessionStorage.getItem('id_token'));
+          console.log('access_token stored:', !!sessionStorage.getItem('access_token'));
+          console.log('username stored:', sessionStorage.getItem('username'));
+          console.log('id_token preview:', sessionStorage.getItem('id_token')?.substring(0, 30));
+          console.log('=========================');
                     
           showMessage('loginResult', '✔️ Login successful! Redirecting...', 'success');
           

@@ -1,16 +1,23 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Enum
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Text, Enum, create_engine
+from sqlalchemy.orm import relationship, declarative_base, sessionmaker
 from datetime import datetime
 from .database import Base
 import enum
+from app.config import settings
 
+engine = create_engine(
+    settings.DATABASE_URL,
+    connect_args={"check_same_thread": False} if settings.DATABASE_URL.startswith("sqlite") else {},
+)
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+Base = declarative_base()
 class Role(str, enum.Enum):
     admin = "admin"
     user = "user"
 
 class User(Base):
     __tablename__ = "users"
-    id = Column(Integer, primary_key=True, index=True)
+    id = Column(String, primary_key=True, index=True)
     username = Column(String, unique=True, index=True, nullable=False)
     password_hash = Column(String, nullable=False)
     role = Column(Enum(Role), default=Role.user, nullable=False)
@@ -26,7 +33,7 @@ class JobStatus(str, enum.Enum):
 class File(Base):
     __tablename__ = "files"
     id = Column(Integer, primary_key=True, index=True)
-    owner_id = Column(Integer, ForeignKey("users.id"))
+    owner_id = Column(String, ForeignKey("users.id"))
     original_filename = Column(String, nullable=False)
     stored_path = Column(String, nullable=False)  # path to video file
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -37,7 +44,7 @@ class File(Base):
 class Job(Base):
     __tablename__ = "jobs"
     id = Column(Integer, primary_key=True, index=True)
-    owner_id = Column(Integer, ForeignKey("users.id"))
+    owner_id = Column(String, ForeignKey("users.id"))
     file_id = Column(Integer, ForeignKey("files.id"))
     status = Column(Enum(JobStatus), default=JobStatus.queued, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)

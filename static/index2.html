@@ -229,7 +229,8 @@
   </div>
 
 <script>
-const API = location.origin;
+const API = "http://localhost:8000";
+
 
 let idToken = null;
 let accessToken = null;
@@ -279,13 +280,14 @@ function logout() {
   sessionStorage.clear();
   
   // Redirect to login page
-  window.location.href = '/login.html';
+  window.location.href = '/';
 }
 
 // Get authorization header
 function getAuthHeader() {
   // Use access_token for API calls (more appropriate than id_token)
   const token = accessToken || idToken;
+  console.log('Using token:', token ? token.substring(0, 20) + '...' : 'NO TOKEN');
   return { 'Authorization': 'Bearer ' + token };
 }
 
