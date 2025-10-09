@@ -22,4 +22,6 @@ flask
 starlette
 python-dotenv
 pycognito
+gunicorn
+
 
