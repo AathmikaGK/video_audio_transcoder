@@ -1,76 +1,36 @@
-# ~/app/app/main.py
-
+# app/main.py
+from flask import Flask, request, redirect, url_for, jsonify, send_from_directory
+from app.Cognito import signup_user, confirm_user, login_user, email_mfa
 import os
 import uuid
-import traceback
-from werkzeug.utils import secure_filename
 
-from flask import (
-    Flask, request, redirect, url_for, jsonify, send_from_directory
-)
-
-from dotenv import load_dotenv
-load_dotenv()
-
-# ==== CONFIG FROM ENV ====
-AWS_REGION = os.getenv("COGNITO_REGION", "ap-southeast-2")
-S3_BUCKET  = os.getenv("S3_BUCKET_NAME")
-DDB_TABLE  = os.getenv("DYNAMODB_TABLE")
-
-# ---- Cognito helpers (unchanged) ----
-from app.Cognito import (
-    signup_user, confirm_user, login_user, email_mfa
-)
-
-# ---- Optional aws_services helpers (we'll gracefully fallback if missing) ----
-_upload_to_s3 = None
-_save_video_metadata = None
-try:
-    from app.aws_services import upload_to_s3 as _upload_to_s3
-    from app.aws_services import save_video_metadata as _save_video_metadata
-except Exception:
-    # We'll log and use direct boto3 fallback below
-    pass
-
-# ---- Boto3 fallback clients (also used for listing from DynamoDB) ----
-import boto3
-s3_client = boto3.client("s3", region_name=AWS_REGION)
-ddb       = boto3.resource("dynamodb", region_name=AWS_REGION)
-ddb_table = ddb.Table(DDB_TABLE)
-
-# ---- Flask app ----
+# --- Flask app ---
 app = Flask(__name__)
 
-
-# -------------------------------------------------
-# Public / Auth endpoints (unchanged from your flow)
-# -------------------------------------------------
+# --------- Public endpoints ----------
 @app.route("/")
 def index():
     return redirect(url_for("static", filename="login.html"))
 
-
 @app.route("/signup", methods=["POST"])
 def signup():
-    data = request.json or {}
+    data = request.json
     resp = signup_user(data["username"], data["password"], data["email"])
     if "error" in resp:
         return {"error": resp["error"]}, 400
-    return {"message": "User registered", "user_sub": resp["UserSub"]}
-
+    return {"message": "User registered", "user_sub": resp.get("UserSub")}
 
 @app.route("/confirm", methods=["POST"])
 def confirm_signup():
-    data = request.json or {}
+    data = request.json
     resp = confirm_user(data["username"], data["code"])
     if "error" in resp:
         return {"error": resp["error"]}, 400
     return {"message": "User confirmed"}
 
-
 @app.route("/login", methods=["POST"])
 def login():
-    data = request.json or {}
+    data = request.json
     result = login_user(data["username"], data["password"])
 
     if "AuthenticationResult" in result:
@@ -78,159 +38,77 @@ def login():
         return {
             "id_token": tokens.get("IdToken"),
             "access_token": tokens.get("AccessToken"),
-            "refresh_token": tokens.get("RefreshToken"),
+            "refresh_token": tokens.get("RefreshToken")
         }
 
     if result.get("ChallengeName") == "EMAIL_OTP":
-        return jsonify({
+        # Frontend should show OTP field and then POST to /verify-mfa
+        return {
             "challenge": "EMAIL_OTP",
             "session": result.get("Session"),
-            "destination": result.get("ChallengeParameters", {}).get(
-                "CODE_DELIVERY_DESTINATION", "email"
-            ),
-        }), 200
+            "destination": result.get("ChallengeParameters", {}).get("CODE_DELIVERY_DESTINATION")
+        }, 200
 
     if "error" in result:
+        print("❌ Cognito error:", result["error"])
         return {"error": result["error"]}, 401
 
     return {"error": "Unexpected Cognito response", "data": result}, 400
 
-
 @app.route("/verify-mfa", methods=["POST"])
 def verify_mfa():
-    data = request.json or {}
+    data = request.json
     mfa_result = email_mfa(data["username"], data["session"], data["mfa_code"])
-    if not mfa_result.get("success"):
-        return {
-            "error": mfa_result.get("error")
-                     or f"Challenge: {mfa_result.get('challenge')}"
-        }, 401
+    if not mfa_result["success"]:
+        return {"error": mfa_result.get("error") or f"Challenge: {mfa_result.get('challenge')}"}, 401
+
     return jsonify({
         "id_token": mfa_result["IdToken"],
         "access_token": mfa_result["AccessToken"],
-        "refresh_token": mfa_result["RefreshToken"],
+        "refresh_token": mfa_result["RefreshToken"]
     })
 
-
-# -------------------------
-# Protected UI entry point
-# -------------------------
+# --------- Static protected page ----------
 @app.route("/index2.html")
 def jobs_page():
     return send_from_directory('static', 'index2.html')
 
 
-# -------------------------
-# S3 upload + DynamoDB save
-# -------------------------
-def _s3_fallback_upload(fileobj_or_path: str | bytes, key: str) -> str:
-    """
-    If app.aws_services.upload_to_s3 isn't working, use a robust direct upload.
-    Accepts either a filepath (str path) or a file-like object (stream).
-    """
-    # Prefer streaming upload when we can
-    if hasattr(fileobj_or_path, "read"):
-        s3_client.upload_fileobj(fileobj_or_path, S3_BUCKET, key)
-    elif isinstance(fileobj_or_path, (bytes, bytearray)):
-        s3_client.put_object(Bucket=S3_BUCKET, Key=key, Body=fileobj_or_path)
-    else:
-        # path string
-        s3_client.upload_file(fileobj_or_path, S3_BUCKET, key)
-
-    return f"https://{S3_BUCKET}.s3.{AWS_REGION}.amazonaws.com/{key}"
-
+# ========= Persistence wiring (S3 + DynamoDB) =========
+from app.aws_services import upload_to_s3, save_video_metadata
 
 @app.route("/upload", methods=["POST"])
 def upload_video():
     """
-    Multipart form:
-      - file: video file
-      - username (optional, for metadata only)
+    Accept a file upload, store raw object in S3 and a metadata row in DynamoDB.
     """
-    try:
-        f = request.files.get("file")
-        if not f:
-            return jsonify({"error": "No file uploaded"}), 400
+    if "file" not in request.files:
+        return jsonify({"error": "No file field"}), 400
 
-        username = request.form.get("username", "anonymous")
-        original = f.filename or "upload.bin"
-        key = f"{uuid.uuid4()}_{secure_filename(original)}"
+    f = request.files["file"]
+    if not f or f.filename.strip() == "":
+        return jsonify({"error": "No file uploaded"}), 400
 
-        # Try module helper first; if not present, fallback to direct boto3
-        if _upload_to_s3:
-            s3_url = _upload_to_s3(f.stream, key)  # let helper handle stream/key
-        else:
-            s3_url = _s3_fallback_upload(f.stream, key)
+    username = request.form.get("username", "anonymous")
+    video_id = str(uuid.uuid4())
 
-        # Save minimal metadata in DynamoDB
-        item_video_id = str(uuid.uuid4())
-        if _save_video_metadata:
-            _save_video_metadata(item_video_id, key, "uploaded", s3_url)
-        else:
-            ddb_table.put_item(Item={
-                "video_id": item_video_id,
-                "filename": key,
-                "status": "uploaded",
-                "s3_url": s3_url,
-                "uploader": username,
-            })
+    # store with a stable key: user/uuid/original-name
+    safe_name = f.filename.replace("/", "_")
+    s3_key = f"{username}/{video_id}/{safe_name}"
 
-        return jsonify({
-            "message": "Upload successful",
-            "video_id": item_video_id,
-            "filename": key,
-            "url": s3_url
-        }), 200
+    stored_key = upload_to_s3(f, s3_key, content_type=f.mimetype or "application/octet-stream")
+    if not stored_key:
+        return jsonify({"error": "Upload failed"}), 500
 
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({
-            "error": "Upload failed",
-            "detail": str(e)
-        }), 500
+    meta = save_video_metadata(
+        video_id=video_id,
+        owner=username,
+        filename=safe_name,
+        s3_key=stored_key,
+        status="uploaded",
+    )
+    if not meta:
+        # If metadata save failed, you still stored the object; report partial success clearly
+        return jsonify({"error": "Saved to S3 but metadata failed"}), 500
 
-
-# -------------------------
-# List files from DynamoDB
-# -------------------------
-@app.route("/files", methods=["GET"])
-def list_files():
-    """
-    Return a simple list of uploaded items from DynamoDB.
-    Your table has only a HASH key on 'video_id', so we use a Scan
-    (fine for demo; for production add a GSI or change schema).
-    """
-    try:
-        resp = ddb_table.scan()
-        items = resp.get("Items", [])
-        # Normalize/limit fields for the UI
-        out = [{
-            "video_id": it.get("video_id"),
-            "filename": it.get("filename"),
-            "status": it.get("status"),
-            "s3_url": it.get("s3_url")
-        } for it in items]
-        return jsonify(out)
-    except Exception as e:
-        traceback.print_exc()
-        return jsonify({"error": str(e)}), 500
-
-
-# -------------------------
-# Jobs stub (so UI stops erroring)
-# -------------------------
-@app.route("/jobs", methods=["GET"])
-def list_jobs():
-    """
-    Stub for now. Return an empty list so the dashboard renders without errors.
-    Later you can add real transcoding jobs and persist their status in DynamoDB or RDS.
-    """
-    return jsonify([])
-
-
-# -------------------------
-# Health
-# -------------------------
-@app.route("/health")
-def health():
-    return {"status": "ok"}
+    return jsonify({"message": "Upload successful", "video_id": video_id, "s3_key": stored_key})
