@@ -1,0 +1,32 @@
+[2025-10-10 11:55:44 +0000] [22889] [INFO] Starting gunicorn 23.0.0
+[2025-10-10 11:55:44 +0000] [22889] [INFO] Listening at: http://127.0.0.1:8000 (22889)
+[2025-10-10 11:55:44 +0000] [22889] [INFO] Using worker: sync
+[2025-10-10 11:55:44 +0000] [22890] [INFO] Booting worker with pid: 22890
+[2025-10-10 11:55:44 +0000] [22891] [INFO] Booting worker with pid: 22891
+[2025-10-10 12:07:00 +0000] [22891] [INFO] Worker exiting (pid: 22891)
+[2025-10-10 12:07:00 +0000] [22890] [INFO] Worker exiting (pid: 22890)
+[2025-10-10 12:07:00 +0000] [22889] [INFO] Handling signal: term
+[2025-10-10 12:07:00 +0000] [22889] [ERROR] Worker (pid:22891) was sent SIGTERM!
+[2025-10-10 12:07:00 +0000] [22889] [ERROR] Worker (pid:22890) was sent SIGTERM!
+[2025-10-10 12:07:00 +0000] [22889] [INFO] Shutting down: Master
+[2025-10-10 12:07:00 +0000] [23693] [INFO] Starting gunicorn 23.0.0
+[2025-10-10 12:07:00 +0000] [23693] [ERROR] Connection in use: ('127.0.0.1', 8000)
+[2025-10-10 12:07:00 +0000] [23693] [ERROR] connection to ('127.0.0.1', 8000) failed: [Errno 98] Address already in use
+[2025-10-10 12:07:01 +0000] [23693] [ERROR] Connection in use: ('127.0.0.1', 8000)
+[2025-10-10 12:07:01 +0000] [23693] [ERROR] connection to ('127.0.0.1', 8000) failed: [Errno 98] Address already in use
+[2025-10-10 12:07:02 +0000] [23693] [ERROR] Connection in use: ('127.0.0.1', 8000)
+[2025-10-10 12:07:02 +0000] [23693] [ERROR] connection to ('127.0.0.1', 8000) failed: [Errno 98] Address already in use
+[2025-10-10 12:07:03 +0000] [23693] [INFO] Listening at: http://127.0.0.1:8000 (23693)
+[2025-10-10 12:07:03 +0000] [23693] [INFO] Using worker: sync
+[2025-10-10 12:07:03 +0000] [23698] [INFO] Booting worker with pid: 23698
+[2025-10-10 12:07:03 +0000] [23699] [INFO] Booting worker with pid: 23699
+[2025-10-10 12:11:10 +0000] [23698] [INFO] Worker exiting (pid: 23698)
+[2025-10-10 12:11:10 +0000] [23693] [INFO] Handling signal: term
+[2025-10-10 12:11:10 +0000] [23699] [INFO] Worker exiting (pid: 23699)
+[2025-10-10 12:11:10 +0000] [23693] [ERROR] Worker (pid:23699) was sent SIGTERM!
+[2025-10-10 12:11:10 +0000] [23790] [INFO] Starting gunicorn 23.0.0
+[2025-10-10 12:11:10 +0000] [23790] [INFO] Listening at: http://127.0.0.1:8000 (23790)
+[2025-10-10 12:11:10 +0000] [23790] [INFO] Using worker: sync
+[2025-10-10 12:11:10 +0000] [23792] [INFO] Booting worker with pid: 23792
+[2025-10-10 12:11:10 +0000] [23793] [INFO] Booting worker with pid: 23793
+[2025-10-10 12:11:10 +0000] [23693] [INFO] Shutting down: Master

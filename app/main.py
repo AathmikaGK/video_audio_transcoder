@@ -1,114 +1,220 @@
 # app/main.py
-from flask import Flask, request, redirect, url_for, jsonify, send_from_directory
-from app.Cognito import signup_user, confirm_user, login_user, email_mfa
 import os
 import uuid
+from datetime import datetime
 
-# --- Flask app ---
-app = Flask(__name__)
+from dotenv import load_dotenv
+load_dotenv()
 
-# --------- Public endpoints ----------
+from flask import (
+    Flask, request, redirect, url_for, jsonify, send_from_directory
+)
+
+# --- AWS (S3 + DynamoDB) ---
+import boto3
+AWS_REGION = os.getenv("COGNITO_REGION", "ap-southeast-2")
+S3_BUCKET = os.getenv("S3_BUCKET_NAME", "a2-group75")
+DDB_TABLE = os.getenv("DYNAMODB_TABLE", "a2-group75-videos")
+
+s3 = boto3.client("s3", region_name=AWS_REGION)
+ddb = boto3.resource("dynamodb", region_name=AWS_REGION).Table(DDB_TABLE)
+
+# --- Cognito helpers (your existing module) ---
+from app.Cognito import (
+    signup_user, confirm_user, login_user, email_mfa
+)
+
+# ------------------------------------------------------------------------------
+# Flask app
+# ------------------------------------------------------------------------------
+app = Flask(__name__, static_folder="static", static_url_path="/static")
+
+
+# ------------------------------------------------------------------------------
+# Basic pages
+# ------------------------------------------------------------------------------
 @app.route("/")
-def index():
+def root():
+    # serve the login page from /static/login.html
     return redirect(url_for("static", filename="login.html"))
 
-@app.route("/signup", methods=["POST"])
-def signup():
-    data = request.json
+
+@app.route("/index2.html")
+def dashboard():
+    # serve your dashboard page
+    return send_from_directory("static", "index2.html")
+
+
+@app.get("/health")
+def health():
+    return {"status": "ok"}
+
+
+# ------------------------------------------------------------------------------
+# Auth endpoints (Cognito)
+# ------------------------------------------------------------------------------
+@app.post("/signup")
+def http_signup():
+    data = request.get_json(force=True)
     resp = signup_user(data["username"], data["password"], data["email"])
-    if "error" in resp:
+    if isinstance(resp, dict) and "error" in resp:
         return {"error": resp["error"]}, 400
     return {"message": "User registered", "user_sub": resp.get("UserSub")}
 
-@app.route("/confirm", methods=["POST"])
-def confirm_signup():
-    data = request.json
+
+@app.post("/confirm")
+def http_confirm():
+    data = request.get_json(force=True)
     resp = confirm_user(data["username"], data["code"])
-    if "error" in resp:
+    if isinstance(resp, dict) and "error" in resp:
         return {"error": resp["error"]}, 400
     return {"message": "User confirmed"}
 
+
 @app.route("/login", methods=["POST"])
-def login():
-    data = request.json
+def http_login():
+    data = request.get_json(force=True)
     result = login_user(data["username"], data["password"])
 
+    # If Cognito returned an error dict
+    if isinstance(result, dict) and "error" in result:
+        return {"error": result["error"]}, 401
+
+    # MFA challenge
+    if isinstance(result, dict) and result.get("ChallengeName") == "EMAIL_OTP":
+        return {
+            "mfa_required": True,
+            "challenge": "EMAIL_OTP",
+            "session": result.get("Session"),
+            "destination": result.get("ChallengeParameters", {}).get("CODE_DELIVERY_DESTINATION")
+        }, 200
+
+    # Normal sign in
     if "AuthenticationResult" in result:
         tokens = result["AuthenticationResult"]
         return {
             "id_token": tokens.get("IdToken"),
             "access_token": tokens.get("AccessToken"),
             "refresh_token": tokens.get("RefreshToken")
-        }
-
-    if result.get("ChallengeName") == "EMAIL_OTP":
-        # Frontend should show OTP field and then POST to /verify-mfa
-        return {
-            "challenge": "EMAIL_OTP",
-            "session": result.get("Session"),
-            "destination": result.get("ChallengeParameters", {}).get("CODE_DELIVERY_DESTINATION")
         }, 200
-
-    if "error" in result:
-        print("❌ Cognito error:", result["error"])
-        return {"error": result["error"]}, 401
 
     return {"error": "Unexpected Cognito response", "data": result}, 400
 
-@app.route("/verify-mfa", methods=["POST"])
-def verify_mfa():
-    data = request.json
-    mfa_result = email_mfa(data["username"], data["session"], data["mfa_code"])
-    if not mfa_result["success"]:
-        return {"error": mfa_result.get("error") or f"Challenge: {mfa_result.get('challenge')}"}, 401
 
-    return jsonify({
-        "id_token": mfa_result["IdToken"],
-        "access_token": mfa_result["AccessToken"],
-        "refresh_token": mfa_result["RefreshToken"]
-    })
-
-# --------- Static protected page ----------
-@app.route("/index2.html")
-def jobs_page():
-    return send_from_directory('static', 'index2.html')
+@app.post("/verify-mfa")
+def http_verify_mfa():
+    data = request.get_json(force=True)
+    r = email_mfa(data["username"], data["session"], data["mfa_code"])
+    if not r.get("success"):
+        return {"error": r.get("error") or f"Challenge: {r.get('challenge')}"}, 401
+    return {
+        "id_token": r["IdToken"],
+        "access_token": r["AccessToken"],
+        "refresh_token": r["RefreshToken"]
+    }
 
 
-# ========= Persistence wiring (S3 + DynamoDB) =========
-from app.aws_services import upload_to_s3, save_video_metadata
-
-@app.route("/upload", methods=["POST"])
-def upload_video():
-    """
-    Accept a file upload, store raw object in S3 and a metadata row in DynamoDB.
-    """
-    if "file" not in request.files:
-        return jsonify({"error": "No file field"}), 400
-
-    f = request.files["file"]
-    if not f or f.filename.strip() == "":
-        return jsonify({"error": "No file uploaded"}), 400
-
-    username = request.form.get("username", "anonymous")
-    video_id = str(uuid.uuid4())
-
-    # store with a stable key: user/uuid/original-name
-    safe_name = f.filename.replace("/", "_")
-    s3_key = f"{username}/{video_id}/{safe_name}"
-
-    stored_key = upload_to_s3(f, s3_key, content_type=f.mimetype or "application/octet-stream")
-    if not stored_key:
-        return jsonify({"error": "Upload failed"}), 500
-
-    meta = save_video_metadata(
-        video_id=video_id,
-        owner=username,
-        filename=safe_name,
-        s3_key=stored_key,
-        status="uploaded",
+# ------------------------------------------------------------------------------
+# Persistence: S3 upload + DynamoDB metadata
+# ------------------------------------------------------------------------------
+def save_video_metadata(video_id: str, username: str, s3_url: str):
+    ddb.put_item(
+        Item={
+            "video_id": video_id,                   # PK
+            "username": username,
+            "s3_url": s3_url,
+            "created_at": datetime.utcnow().isoformat() + "Z"
+        }
     )
-    if not meta:
-        # If metadata save failed, you still stored the object; report partial success clearly
-        return jsonify({"error": "Saved to S3 but metadata failed"}), 500
 
-    return jsonify({"message": "Upload successful", "video_id": video_id, "s3_key": stored_key})
+
+def list_user_videos(username: str):
+    # simplest approach: Scan + filter (ok for assignment scale)
+    resp = ddb.scan()
+    items = resp.get("Items", [])
+    return [it for it in items if it.get("username") == username]
+
+
+@app.post("/upload")
+def upload_video():
+    # multipart/form-data: file + username
+    file = request.files.get("file")
+    username = request.form.get("username", "anonymous")
+
+    if not file or file.filename == "":
+        return {"error": "No file uploaded"}, 400
+
+    # build a unique key inside the bucket
+    key = f"uploads/{uuid.uuid4()}_{file.filename}"
+
+    try:
+        # upload to S3
+        s3.upload_fileobj(
+            Fileobj=file,
+            Bucket=S3_BUCKET,
+            Key=key,
+            ExtraArgs={"ContentType": file.mimetype or "application/octet-stream"}
+        )
+        s3_url = f"s3://{S3_BUCKET}/{key}"
+
+        # write metadata to DynamoDB
+        video_id = str(uuid.uuid4())
+        save_video_metadata(video_id, username, s3_url)
+
+        return {"message": "Upload successful", "url": s3_url, "video_id": video_id}
+    except Exception as e:
+        # log to server logs; return safe error to client
+        print("Upload error:", repr(e))
+        return {"error": "Upload failed"}, 500
+
+
+@app.get("/files")
+def files_me():
+    # Very simple auth model: username query param from the client
+    # (Good enough for demo/assignment; tokens can be validated later)
+    username = request.args.get("username", "anonymous")
+    try:
+        items = list_user_videos(username)
+        # Shape to something your UI can use
+        return jsonify(items)
+    except Exception as e:
+        print("List files error:", repr(e))
+        return {"error": "Failed to load files"}, 500
+
+
+@app.get("/jobs")
+def jobs_me():
+    # Stub: if your UI calls /jobs, return an empty list instead of error
+    # You can later implement real processing + job records in DDB or RDS.
+    return jsonify([])
+
+
+# ------------------------------------------------------------------------------
+# OPTIONAL: Pre-signed upload (for +2 marks)
+# ------------------------------------------------------------------------------
+@app.post("/presign-upload")
+def presign_upload():
+    data = request.get_json(force=True)
+    filename = data.get("filename")
+    if not filename:
+        return {"error": "filename required"}, 400
+
+    key = f"uploads/{uuid.uuid4()}_{filename}"
+    try:
+        url = s3.generate_presigned_url(
+            ClientMethod="put_object",
+            Params={"Bucket": S3_BUCKET, "Key": key, "ContentType": "application/octet-stream"},
+            ExpiresIn=900,  # 15 minutes
+            HttpMethod="PUT",
+        )
+        return {"url": url, "bucket": S3_BUCKET, "key": key}
+    except Exception as e:
+        print("Presign error:", repr(e))
+        return {"error": "Failed to create presigned URL"}, 500
+
+
+# ------------------------------------------------------------------------------
+# Run local (not used in prod with gunicorn)
+# ------------------------------------------------------------------------------
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8000, debug=True)
