@@ -1,0 +1,179 @@
+# ~/app/app/main.py
+
+import os
+import uuid
+import tempfile
+from werkzeug.utils import secure_filename
+
+from flask import (
+    Flask, request, redirect, url_for, jsonify, send_from_directory
+)
+
+# Load environment variables
+from dotenv import load_dotenv
+load_dotenv()
+
+# Your Cognito helpers live in app/Cognito.py
+from app.Cognito import (
+    signup_user, confirm_user, login_user, email_mfa
+)
+
+# S3 + Dynamo helpers live in app/aws_services.py
+from app.aws_services import upload_to_s3, save_video_metadata
+
+
+# ---- Flask app ----
+app = Flask(__name__)
+
+
+# ---------- Public Endpoints ----------
+@app.route("/")
+def index():
+    # Serve the static login page
+    return redirect(url_for("static", filename="login.html"))
+
+
+@app.route("/signup", methods=["POST"])
+def signup():
+    data = request.json or {}
+    resp = signup_user(data["username"], data["password"], data["email"])
+
+    if "error" in resp:
+        return {"error": resp["error"]}, 400
+
+    return {"message": "User registered", "user_sub": resp["UserSub"]}
+
+
+@app.route("/confirm", methods=["POST"])
+def confirm_signup():
+    data = request.json or {}
+    resp = confirm_user(data["username"], data["code"])
+
+    if "error" in resp:
+        return {"error": resp["error"]}, 400
+
+    return {"message": "User confirmed"}
+
+
+@app.route("/login", methods=["POST"])
+def login():
+    """
+    1) If Cognito returns tokens -> success (no MFA).
+    2) If Cognito returns EMAIL_OTP -> tell frontend to ask for OTP.
+    3) Else -> error.
+    """
+    data = request.json or {}
+    result = login_user(data["username"], data["password"])
+
+    # Success path (no MFA)
+    if "AuthenticationResult" in result:
+        tokens = result["AuthenticationResult"]
+        return {
+            "id_token": tokens.get("IdToken"),
+            "access_token": tokens.get("AccessToken"),
+            "refresh_token": tokens.get("RefreshToken"),
+        }
+
+    # MFA challenge
+    if result.get("ChallengeName") == "EMAIL_OTP":
+        return jsonify({
+            "challenge": "EMAIL_OTP",
+            "session": result.get("Session"),
+            "destination": result.get("ChallengeParameters", {}).get(
+                "CODE_DELIVERY_DESTINATION", "email"
+            ),
+        }), 200
+
+    # Error path
+    if "error" in result:
+        print("❌ Cognito error:", result["error"])
+        return {"error": result["error"]}, 401
+
+    return {"error": "Unexpected Cognito response", "data": result}, 400
+
+
+@app.route("/verify-mfa", methods=["POST"])
+def verify_mfa():
+    """
+    Complete the EMAIL_OTP challenge and return tokens.
+    Body: { username, session, mfa_code }
+    """
+    data = request.json or {}
+
+    mfa_result = email_mfa(
+        data["username"],
+        data["session"],
+        data["mfa_code"]
+    )
+
+    if not mfa_result.get("success"):
+        return {
+            "error": mfa_result.get("error")
+                     or f"Challenge: {mfa_result.get('challenge')}"
+        }, 401
+
+    return jsonify({
+        "id_token": mfa_result["IdToken"],
+        "access_token": mfa_result["AccessToken"],
+        "refresh_token": mfa_result["RefreshToken"],
+    })
+
+
+# ---------- Protected Page ----------
+@app.route("/index2.html")
+def jobs_page():
+    """Serve the dashboard page"""
+    return send_from_directory('static', 'index2.html')
+
+
+# ---------- Upload to S3 + write metadata to Dynamo ----------
+@app.route("/upload", methods=["POST"])
+def upload_video():
+    """
+    Accepts multipart form:
+      - file: video file
+      - username: optional (defaults to 'anonymous')  [stored in Dynamo only if you add it there]
+    """
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"error": "No file uploaded"}), 400
+
+    username = request.form.get("username", "anonymous")
+
+    # Create a safe object key for S3
+    original = f.filename or "upload.bin"
+    key = f"{uuid.uuid4()}_{secure_filename(original)}"
+
+    # Save to a temp file so upload_to_s3(file_path, s3_key) works regardless of implementation
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        f.save(tmp.name)
+        tmp_path = tmp.name
+
+    try:
+        s3_url = upload_to_s3(tmp_path, key)
+    finally:
+        # Clean up the temp file
+        try:
+            os.remove(tmp_path)
+        except Exception:
+            pass
+
+    if not s3_url:
+        return jsonify({"error": "Upload failed"}), 500
+
+    video_id = str(uuid.uuid4())
+    # Save minimal metadata; feel free to extend your Dynamo schema
+    save_video_metadata(video_id, key, "uploaded", s3_url)
+
+    return jsonify({
+        "message": "Upload successful",
+        "video_id": video_id,
+        "filename": key,
+        "url": s3_url
+    }), 200
+
+
+# ---------- Local dev ----------
+if __name__ == "__main__":
+    # For local testing only; in prod you run with gunicorn
+    app.run(host="127.0.0.1", port=8000, debug=True)
