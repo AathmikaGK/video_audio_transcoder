@@ -161,7 +161,8 @@
 
       <div style="text-align: center; margin-top: 20px;">
         <span style="color: #666;">Don't have an account?</span>
-        <button class="link-btn" onclick="signup_user()">Sign up</button>
+        <button class="link-btn" onclick="showSignup()">Sign up</button>
+        <!-- signupuser was there earlierr -->
       </div>
 
       <div id="loginResult" class="result hidden"></div>
@@ -178,7 +179,7 @@
         <!-- Confirmation code input - hidden by default, shown after signup -->
         <div id="confirmSection" class="hidden">
           <input type="text" id="confirmCode" placeholder="Enter Confirmation Code from Email">
-          <button type="button" class="primary-btn" onclick="confirm_user()">Submit Code</button>
+          <button type="button" class="primary-btn" onclick="confirmSignup()">Submit Code</button>
         </div>
         
         <!-- Signup button - hidden after clicking signup -->
@@ -326,15 +327,23 @@
         
         if (res.ok) {
           // Store the ID token for authenticated requests
-          // Note: Storing in JS variable for session, not localStorage (per your requirements)
-          const idToken = data.id_token;
-          
+          sessionStorage.setItem('id_token', data.id_token);
+          sessionStorage.setItem('access_token', data.access_token);
+          sessionStorage.setItem('refresh_token', data.refresh_token);
+          sessionStorage.setItem('username', currentUsername);
+          // DEBUG: Verify storage immediately
+          console.log('=== TOKEN STORAGE DEBUG ===');
+          console.log('id_token stored:', !!sessionStorage.getItem('id_token'));
+          console.log('access_token stored:', !!sessionStorage.getItem('access_token'));
+          console.log('username stored:', sessionStorage.getItem('username'));
+          console.log('id_token preview:', sessionStorage.getItem('id_token')?.substring(0, 30));
+          console.log('=========================');
+                    
           showMessage('loginResult', '✔️ Login successful! Redirecting...', 'success');
           
-          // Redirect to jobs page after 1 second
-          setTimeout(() => {
-            window.location.href = '/jobs';
-          }, 1000);
+          // Redirect to jobs page 
+          window.location.href = '/index2.html';
+          
         } else {
           showMessage('loginResult', `❌ ${data.error || 'MFA verification failed'}`, 'error');
         }

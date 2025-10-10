@@ -130,19 +130,66 @@ def signupWithGoogle():
 # ---------------- JWT Verification ---------------- #
 
 def verify_jwt(token):
-    header = jwt.get_unverified_header(token)
-    key = next((k for k in jwks if k["kid"] == header["kid"]), None)
-    if not key:
-        raise Exception("Invalid JWT: key not found")
-    public_key = jwt.algorithms.RSAAlgorithm.from_jwk(key)
-    decoded = jwt.decode(
-        token,
-        public_key,
-        algorithms=["RS256"],
-        audience=CLIENT_ID,
-        issuer=f"https://cognito-idp.{REGION}.amazonaws.com/{USERPOOL_ID}"
-    )
-    return decoded
+    """Verify JWT token and return user claims"""
+    try:
+        # Get token header
+        header = jwt.get_unverified_header(token)
+        
+        # Find the matching key
+        key = next((k for k in jwks if k["kid"] == header["kid"]), None)
+        if not key:
+            raise Exception("Invalid JWT: key not found")
+        
+        # Convert JWK to public key
+        public_key = jwt.algorithms.RSAAlgorithm.from_jwk(key)
+        
+        # First, decode without verification to check token type
+        unverified = jwt.decode(token, options={"verify_signature": False})
+        
+        # Check if this is an access_token or id_token
+        token_use = unverified.get("token_use")
+        
+        print(f"Token type: {token_use}")
+        print(f"Token claims: {list(unverified.keys())}")
+        
+        # Decode and verify based on token type
+        if token_use == "id":
+            # ID Token - has 'aud' claim
+            decoded = jwt.decode(
+                token,
+                public_key,
+                algorithms=["RS256"],
+                audience=CLIENT_ID,  # ID tokens use 'aud'
+                issuer=f"https://cognito-idp.{REGION}.amazonaws.com/{USERPOOL_ID}"
+            )
+        elif token_use == "access":
+            # Access Token - has 'client_id' instead of 'aud'
+            decoded = jwt.decode(
+                token,
+                public_key,
+                algorithms=["RS256"],
+                options={"verify_aud": False},  # Don't verify 'aud' for access tokens
+                issuer=f"https://cognito-idp.{REGION}.amazonaws.com/{USERPOOL_ID}"
+            )
+            # Manually verify client_id for access tokens
+            if decoded.get("client_id") != CLIENT_ID:
+                raise Exception("Invalid client_id in access token")
+        else:
+            raise Exception(f"Unknown token_use: {token_use}")
+        
+        # Log successful verification
+        username = decoded.get("cognito:username") or decoded.get("username")
+        print(f"Token verified successfully for user: {username}")
+        
+        return decoded
+        
+    except jwt.ExpiredSignatureError:
+        raise Exception("Token has expired")
+    except jwt.InvalidTokenError as e:
+        raise Exception(f"Invalid token: {str(e)}")
+    except Exception as e:
+        print(f"Token verification error: {e}")
+        raise Exception(f"Token verification failed: {str(e)}")
 
 def token_required(f):
     @wraps(f)

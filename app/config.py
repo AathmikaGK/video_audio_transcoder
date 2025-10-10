@@ -28,7 +28,8 @@ class Settings:
     COGNITO_DOMAIN = "myapp.auth.ap-southeast-2.amazoncognito.com"
     FLASK_SECRET_KEY = "mysupersecretkey"
 
-
+    class Config:
+        env_file = ".env"
 
 
 settings = Settings()

@@ -1,25 +1,36 @@
-fastapi==0.115.0
+fastapi
 uvicorn[standard]==0.30.6
-python-multipart==0.0.12
+python-multipart
 SQLAlchemy==2.0.35
-pydantic==2.9.2
-passlib[bcrypt]==1.7.4
+
+pydantic
+passlib[bcrypt]
 python-jose==3.3.0
 requests==2.32.3
 vosk==0.3.45
 
-
-botocore==1.39.10
-jmespath==1.0.1
-python-dateutil==2.9.0.post0
+botocore
+jmespath
+python-dateutil
 s3transfer==0.13.1
 six==1.17.0
-urllib3==2.5.0
+urllib3
 python-jose[cryptography]
-requests
-boto3
-flask
+
 starlette
-python-dotenv
 pycognito
 
+# Flask and WSGI server
+Flask==3.0.0
+Flask-CORS==4.0.0
+gunicorn==21.2.0
+Werkzeug==3.0.1
+# JWT handling
+PyJWT
+cryptography
+
+# Environment variables
+python-dotenv==1.0.0
+
+# Database - SQLAlchemy
+alembic

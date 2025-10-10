@@ -1,0 +1,571 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Video to Audio and Transcript Converter</title>
+  <style>
+    body { 
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial; 
+      margin: 0;
+      padding: 0;
+      background-color: #f5f5f5;
+    }
+    .header {
+      background: white;
+      padding: 20px 40px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .header h1 {
+      margin: 0;
+      font-size: 24px;
+    }
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .username {
+      font-weight: 500;
+      color: #333;
+    }
+    .logout-btn {
+      padding: 8px 16px;
+      background-color: #dc3545;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .logout-btn:hover {
+      background-color: #c82333;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 40px auto;
+      padding: 0 40px;
+    }
+    .card { 
+      background: white;
+      border: 1px solid #ddd; 
+      border-radius: 12px; 
+      padding: 24px; 
+      margin-bottom: 24px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .card h3 {
+      margin-top: 0;
+      margin-bottom: 16px;
+      font-size: 18px;
+      color: #333;
+    }
+    label { 
+      display: block; 
+      margin: 8px 0 4px;
+      font-weight: 500;
+    }
+    input[type=file] { 
+      padding: 8px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      width: 100%;
+      max-width: 400px;
+    }
+    button { 
+      padding: 10px 16px; 
+      border-radius: 6px; 
+      border: 1px solid #007bff;
+      background-color: #007bff;
+      color: white;
+      cursor: pointer;
+      font-size: 14px;
+      margin-right: 8px;
+    }
+    button:hover {
+      background-color: #0056b3;
+      border-color: #0056b3;
+    }
+    button.secondary {
+      background-color: white;
+      color: #6c757d;
+      border-color: #6c757d;
+    }
+    button.secondary:hover {
+      background-color: #6c757d;
+      color: white;
+    }
+    button.danger {
+      background-color: #dc3545;
+      border-color: #dc3545;
+    }
+    button.danger:hover {
+      background-color: #c82333;
+      border-color: #c82333;
+    }
+    button.small {
+      padding: 6px 12px;
+      font-size: 13px;
+    }
+    table { 
+      border-collapse: collapse; 
+      width: 100%;
+      margin-top: 16px;
+    }
+    th, td { 
+      border-bottom: 1px solid #eee; 
+      padding: 12px 8px; 
+      text-align: left; 
+    }
+    th {
+      background-color: #f8f9fa;
+      font-weight: 600;
+      color: #333;
+    }
+    tr:hover {
+      background-color: #f8f9fa;
+    }
+    .status {
+      display: inline-block;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .status.queued {
+      background-color: #fff3cd;
+      color: #856404;
+    }
+    .status.processing {
+      background-color: #cfe2ff;
+      color: #084298;
+    }
+    .status.done {
+      background-color: #d1e7dd;
+      color: #0f5132;
+    }
+    .status.failed {
+      background-color: #f8d7da;
+      color: #842029;
+    }
+    #uploadStatus {
+      margin-top: 12px;
+      padding: 10px;
+      border-radius: 6px;
+      display: none;
+    }
+    #uploadStatus.success {
+      background-color: #d1e7dd;
+      color: #0f5132;
+      display: block;
+    }
+    #uploadStatus.error {
+      background-color: #f8d7da;
+      color: #842029;
+      display: block;
+    }
+    .loading {
+      text-align: center;
+      padding: 20px;
+      color: #666;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 40px;
+      color: #666;
+    }
+    a {
+      color: #007bff;
+      text-decoration: none;
+    }
+    a:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <!-- Header with user info and logout -->
+  <div class="header">
+    <h1>Video to Audio Converter</h1>
+    <div class="user-info">
+      <span class="username" id="username">Loading...</span>
+      <button class="logout-btn" onclick="logout()">Logout</button>
+    </div>
+  </div>
+
+  <div class="container">
+    <!-- Upload Video Card -->
+    <div class="card" id="uploadCard">
+      <h3>📤 Upload Video</h3>
+      <input id="file" type="file" accept="video/*">
+      <button onclick="upload()" style="margin-top: 12px;">Upload Video</button>
+      <div id="uploadStatus"></div>
+    </div>
+
+    <!-- Your Files Card -->
+    <div class="card" id="filesCard">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h3>📁 Your Files</h3>
+        <button class="secondary small" onclick="loadFiles()">🔄 Refresh</button>
+      </div>
+      <div id="filesContent">
+        <div class="loading">Loading files...</div>
+      </div>
+    </div>
+
+    <!-- Your Jobs Card -->
+    <div class="card" id="jobsCard">
+      <div style="display: flex; justify-content: space-between; align-items: center;">
+        <h3>⚙️ Your Jobs</h3>
+        <button class="secondary small" onclick="loadJobs()">🔄 Refresh</button>
+      </div>
+      <div id="jobsContent">
+        <div class="loading">Loading jobs...</div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const API = "http://localhost:8000";
+
+
+let idToken = null;
+let accessToken = null;
+let username = null;
+
+// Function to load tokens from sessionStorage
+function loadTokensFromStorage() {
+  idToken = sessionStorage.getItem('id_token');
+  accessToken = sessionStorage.getItem('access_token');
+  username = sessionStorage.getItem('username');
+  
+  console.log('Loaded tokens:', { 
+    hasIdToken: !!idToken, 
+    hasAccessToken: !!accessToken, 
+    username: username 
+  });
+}
+// Check authentication on page load
+function checkAuth() {
+  // Load tokens first
+  loadTokensFromStorage();
+  
+  // Debug: Check what we got
+  console.log('Checking auth - idToken:', idToken ? 'exists' : 'missing');
+  console.log('Checking auth - accessToken:', accessToken ? 'exists' : 'missing');
+  
+  if (!idToken && !accessToken) {
+    // Not authenticated, redirect to login page
+    console.error('No tokens found in sessionStorage');
+    alert('Please login first');
+    window.location.href = '/';
+    return false;
+  }
+  
+  // Display username
+  if (username) {
+    document.getElementById('username').textContent = username;
+  } else {
+    document.getElementById('username').textContent = 'User';
+  }
+  
+  return true;
+}
+// Logout function
+function logout() {
+  // Clear all session data
+  sessionStorage.clear();
+  
+  // Redirect to login page
+  window.location.href = '/';
+}
+
+// Get authorization header
+function getAuthHeader() {
+  // Use access_token for API calls (more appropriate than id_token)
+  const token = accessToken || idToken;
+  console.log('Using token:', token ? token.substring(0, 20) + '...' : 'NO TOKEN');
+  return { 'Authorization': 'Bearer ' + token };
+}
+
+// Upload video
+async function upload() {
+  const fileInput = document.getElementById("file");
+  const file = fileInput.files[0];
+  
+  if (!file) {
+    alert("Please choose a video file");
+    return;
+  }
+  
+  const uploadStatus = document.getElementById("uploadStatus");
+  uploadStatus.textContent = "Uploading...";
+  uploadStatus.className = "";
+  uploadStatus.style.display = "block";
+  
+  try {
+    const formData = new FormData();
+    formData.append("f", file);
+    
+    const response = await fetch(API + "/upload/video", {
+      method: "POST",
+      body: formData,
+      headers: getAuthHeader()
+    });
+    
+    if (!response.ok) {
+      if (response.status === 401) {
+        alert("Session expired. Please login again.");
+        logout();
+        return;
+      }
+      throw new Error("Upload failed");
+    }
+    
+    const data = await response.json();
+    uploadStatus.textContent = `✓ Uploaded: ${data.original_filename} (ID: ${data.id})`;
+    uploadStatus.className = "success";
+    
+    // Clear file input
+    fileInput.value = "";
+    
+    // Refresh files list
+    loadFiles();
+    
+  } catch (error) {
+    uploadStatus.textContent = `✗ Upload failed: ${error.message}`;
+    uploadStatus.className = "error";
+  }
+}
+
+// Load files
+async function loadFiles() {
+  const filesContent = document.getElementById("filesContent");
+  filesContent.innerHTML = '<div class="loading">Loading files...</div>';
+  
+  try {
+    const response = await fetch(API + "/files", {
+      headers: getAuthHeader()
+    });
+    
+    if (!response.ok) {
+      if (response.status === 401) {
+        logout();
+        return;
+      }
+      throw new Error("Failed to load files");
+    }
+    
+    const files = await response.json();
+    
+    if (files.length === 0) {
+      filesContent.innerHTML = '<div class="empty-state">No files uploaded yet. Upload a video to get started!</div>';
+      return;
+    }
+    
+    let tableHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Original Filename</th>
+            <th>Created At</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+    
+    files.forEach(file => {
+      const createdDate = new Date(file.created_at).toLocaleString();
+      tableHTML += `
+        <tr>
+          <td>${file.id}</td>
+          <td>${file.original_filename}</td>
+          <td>${createdDate}</td>
+          <td>
+            <button class="small" onclick="startJob(${file.id})">Process</button>
+            <button class="small danger" onclick="deleteFile(${file.id})">Delete</button>
+          </td>
+        </tr>
+      `;
+    });
+    
+    tableHTML += '</tbody></table>';
+    filesContent.innerHTML = tableHTML;
+    
+  } catch (error) {
+    filesContent.innerHTML = `<div class="empty-state" style="color: #dc3545;">Error: ${error.message}</div>`;
+  }
+}
+
+// Start processing job
+async function startJob(fileId) {
+  if (!confirm(`Start processing video file (ID: ${fileId})?`)) {
+    return;
+  }
+  
+  try {
+    const response = await fetch(API + "/process/" + fileId, {
+      method: "POST",
+      headers: getAuthHeader()
+    });
+    
+    if (!response.ok) {
+      if (response.status === 401) {
+        logout();
+        return;
+      }
+      throw new Error("Failed to start job");
+    }
+    
+    const data = await response.json();
+    alert(`✓ Job queued successfully! Job ID: ${data.id}`);
+    
+    // Refresh jobs list
+    loadJobs();
+    
+  } catch (error) {
+    alert(`✗ Failed to start job: ${error.message}`);
+  }
+}
+
+// Load jobs
+async function loadJobs() {
+  const jobsContent = document.getElementById("jobsContent");
+  jobsContent.innerHTML = '<div class="loading">Loading jobs...</div>';
+  
+  try {
+    const response = await fetch(API + "/jobs?page=1&page_size=100", {
+      headers: getAuthHeader()
+    });
+    
+    if (!response.ok) {
+      if (response.status === 401) {
+        logout();
+        return;
+      }
+      throw new Error("Failed to load jobs");
+    }
+    
+    const jobs = await response.json();
+    
+    if (jobs.length === 0) {
+      jobsContent.innerHTML = '<div class="empty-state">No jobs yet. Process a video file to create a job!</div>';
+      return;
+    }
+    
+    let tableHTML = `
+      <table>
+        <thead>
+          <tr>
+            <th>Job ID</th>
+            <th>Status</th>
+            <th>Updated At</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+    `;
+    
+    jobs.forEach(job => {
+      const updatedDate = new Date(job.updated_at).toLocaleString();
+      const statusClass = job.status.toLowerCase();
+      
+      let actions = '-';
+      if (job.status === 'done') {
+        const token = accessToken || idToken;
+        actions = `
+          <a href="${API}/download/audio/${job.id}?access_token=${token}" target="_blank">📥 Audio</a> | 
+          <a href="${API}/download/transcript/${job.id}?access_token=${token}" target="_blank">📄 Transcript</a>
+        `;
+      } else if (job.status === 'failed') {
+        actions = `<span style="color: #dc3545;">${job.error_message || 'Processing failed'}</span>`;
+      }
+      
+      tableHTML += `
+        <tr>
+          <td>${job.id}</td>
+          <td><span class="status ${statusClass}">${job.status.toUpperCase()}</span></td>
+          <td>${updatedDate}</td>
+          <td>${actions}</td>
+        </tr>
+      `;
+    });
+    
+    tableHTML += '</tbody></table>';
+    jobsContent.innerHTML = tableHTML;
+    
+  } catch (error) {
+    jobsContent.innerHTML = `<div class="empty-state" style="color: #dc3545;">Error: ${error.message}</div>`;
+  }
+}
+
+// Delete file
+async function deleteFile(fileId) {
+  if (!confirm(`Are you sure you want to delete file (ID: ${fileId})? This will also delete all associated jobs.`)) {
+    return;
+  }
+  
+  try {
+    const response = await fetch(API + "/files/" + fileId, {
+      method: "DELETE",
+      headers: getAuthHeader()
+    });
+    
+    if (!response.ok) {
+      if (response.status === 401) {
+        logout();
+        return;
+      }
+      throw new Error("Failed to delete file");
+    }
+    
+    alert("✓ File deleted successfully");
+    
+    // Refresh both lists
+    loadFiles();
+    loadJobs();
+    
+  } catch (error) {
+    alert(`✗ Failed to delete file: ${error.message}`);
+  }
+}
+
+// Auto-refresh jobs every 5 seconds to check for status updates
+let autoRefreshInterval;
+function startAutoRefresh() {
+  autoRefreshInterval = setInterval(() => {
+    loadJobs();
+  }, 5000); // Refresh every 5 seconds
+}
+
+function stopAutoRefresh() {
+  if (autoRefreshInterval) {
+    clearInterval(autoRefreshInterval);
+  }
+}
+
+// Initialize page
+window.addEventListener('load', () => {
+  // Check authentication
+  if (checkAuth()) {
+    // Load initial data
+    loadFiles();
+    loadJobs();
+    
+    // Start auto-refresh for jobs
+    startAutoRefresh();
+  }
+});
+
+// Stop auto-refresh when user leaves the page
+window.addEventListener('beforeunload', () => {
+  stopAutoRefresh();
+});
+</script>
+</body>
+</html>
