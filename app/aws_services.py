@@ -1,61 +1,60 @@
-# app/aws_services.py
 import os
-import uuid
 import boto3
 from botocore.exceptions import BotoCoreError, ClientError
-from datetime import datetime
+from dotenv import load_dotenv
+
+# Load env when running via gunicorn too
+load_dotenv()
 
 REGION = os.getenv("COGNITO_REGION", "ap-southeast-2")
-BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
-TABLE_NAME  = os.getenv("DYNAMODB_TABLE")
+BUCKET = os.getenv("S3_BUCKET_NAME")
+TABLE  = os.getenv("DYNAMODB_TABLE")
 
-if not BUCKET_NAME:
-    raise RuntimeError("Missing env var S3_BUCKET_NAME")
-if not TABLE_NAME:
-    raise RuntimeError("Missing env var DYNAMODB_TABLE")
+s3  = boto3.client("s3", region_name=REGION)
+ddb = boto3.resource("dynamodb", region_name=REGION)
 
-s3 = boto3.client("s3", region_name=REGION)
-dynamodb = boto3.resource("dynamodb", region_name=REGION)
-table = dynamodb.Table(TABLE_NAME)
-
-def upload_to_s3(file_obj, s3_key, content_type=None):
+def upload_to_s3(fileobj, filename):
     """
-    Upload a file-like object (Werkzeug/Flask file) to S3 using upload_fileobj.
-    Returns the S3 key that was stored.
+    Uploads the incoming Werkzeug file to S3 under uploads/<filename>.
+    Returns (s3_url, None) on success; (None, 'error message') on failure.
     """
-    extra = {}
-    if content_type:
-        extra["ContentType"] = content_type
-
+    key = f"uploads/{filename}"
     try:
-        # IMPORTANT: file_obj must be at position 0
-        file_obj.stream.seek(0)
         s3.upload_fileobj(
-            Fileobj=file_obj.stream,
-            Bucket=BUCKET_NAME,
-            Key=s3_key,
-            ExtraArgs=extra or None
+            Fileobj=fileobj,
+            Bucket=BUCKET,
+            Key=key,
+            ExtraArgs={"ContentType": getattr(fileobj, "mimetype", "application/octet-stream"),
+                       "ACL": "private"}
         )
-        return s3_key
+        return f"s3://{BUCKET}/{key}", None
     except (BotoCoreError, ClientError) as e:
-        print(f"[upload_to_s3] ERROR: {e}")
-        return None
+        msg = f"S3 upload failed: {getattr(e, 'response', {}).get('Error', {}).get('Message', str(e))}"
+        print(msg)
+        return None, msg
+    except Exception as e:
+        msg = f"S3 upload failed: {repr(e)}"
+        print(msg)
+        return None, msg
 
-def save_video_metadata(video_id, owner, filename, s3_key, status="uploaded"):
+def save_video_metadata(video_id: str, username: str, s3_url: str):
     """
-    Persist a row into DynamoDB for your video.
+    Writes a simple item to DynamoDB.
+    Returns (True, None) on success; (False, 'error message') on failure.
     """
     try:
-        item = {
-            "video_id": video_id,        # partition key
-            "owner": owner,              # who uploaded
-            "filename": filename,
-            "s3_key": s3_key,
-            "status": status,
-            "created_at": datetime.utcnow().isoformat(timespec="seconds") + "Z",
-        }
-        table.put_item(Item=item)
-        return item
+        table = ddb.Table(TABLE)
+        table.put_item(Item={
+            "video_id": video_id,
+            "owner": username,
+            "s3_url": s3_url,
+        })
+        return True, None
     except (BotoCoreError, ClientError) as e:
-        print(f"[save_video_metadata] ERROR: {e}")
-        return None
+        msg = f"DDB put failed: {getattr(e, 'response', {}).get('Error', {}).get('Message', str(e))}"
+        print(msg)
+        return False, msg
+    except Exception as e:
+        msg = f"DDB put failed: {repr(e)}"
+        print(msg)
+        return False, msg
