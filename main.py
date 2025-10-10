@@ -28,7 +28,7 @@ from app.Cognito import (
 )
 
 load_dotenv()
-
+Base.metadata.create_all(bind=engine)
 # ===== FastAPI App Setup =====
 app = FastAPI(
     title=settings.PROJECT_NAME,
