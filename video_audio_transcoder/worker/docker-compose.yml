@@ -1,0 +1,28 @@
+version: "3.9"
+services:
+  api:
+    build:
+      context: .
+      # Uncomment the next line when building on Apple M1/M2/M3 for x86 EC2:
+      # platfor`m: linux/amd64
+    image: vid2audiotext:latest
+    ports:
+      - "8000:8000"
+    environment:
+      SECRET_KEY: "change-me"
+      STORAGE_DIR: "/data"
+      VOSK_MODEL_PATH: "/opt/vosk/model"
+      # Optional quality/CPU toggles:
+      # HEAVY_AUDIO: "1"
+      # EXTRA_ENCODINGS: "flac,opus"
+    volumes:
+      - ./storage:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8000/health"]
+      interval: 30s
+      timeout: 3s
+      start_period: 10s
+      retries: 3
+
+    # volumes:
+    #   - ./storage:/app/storage
