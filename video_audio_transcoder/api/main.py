@@ -7,7 +7,13 @@ load_dotenv()
 
 from flask import Flask, request, redirect, jsonify, send_from_directory
 from flask_cors import CORS
-
+import logging
+import traceback
+logging.basicConfig(
+    level=logging.DEBUG,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 # Import our modules
 from aws_services import (
     upload_to_s3, save_video_metadata, get_video_metadata,
