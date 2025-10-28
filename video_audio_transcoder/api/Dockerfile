@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     rm -rf /var/lib/apt/lists/*
 
 # ---- Workdir ----
-WORKDIR /app
+WORKDIR /api
 
 # Copy requirements early for caching
 COPY requirements.txt /app/requirements.txt
@@ -33,33 +33,25 @@ RUN mkdir -p /opt/vosk && \
     echo "Vosk model installed at /opt/vosk/model"
 
 # ---- App code ----
-COPY app /app/app
-COPY .env /app/.env
+COPY api /api/api
+COPY .env /api/.env
 
 #------Copy static files
-COPY static /app/static
+COPY static /api/static
 
 # ---- Runtime env / storage outside image ----
 # STORAGE_DIR=/data is where videos/audio/text are written. Mount a volume there.
-ENV STORAGE_DIR=/data \
-    VOSK_MODEL_PATH=/opt/vosk/model \
+ENV VOSK_MODEL_PATH=/opt/vosk/model \
     SECRET_KEY=change-me \
     FFMPEG_BIN=ffmpeg \
     HEAVY_AUDIO=0 \
     EXTRA_ENCODINGS=""
 
-# Create the mount point and ensure we can write as non-root
-RUN mkdir -p /data && useradd -ms /bin/bash appuser && chown -R appuser:appuser /app /data
-USER appuser
+EXPOSE 8080
 
-EXPOSE 8000
-
-# (Optional) healthcheck
+# healthcheck
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s \
   CMD curl -fsS http://127.0.0.1:8000/health || exit 1
-
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-#CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:5000", "app.main:app"]
-
+CMD ["gunicorn", "-w", "4", "-b", "0.0.0.0:8080", "main:app"]
 
 # "I have taken some reference from the web for downloading vosk model"
