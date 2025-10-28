@@ -4,6 +4,7 @@ import subprocess
 import wave
 import boto3
 from vosk import Model, KaldiRecognizer
+import shutil
 
 # Configuration
 AWS_REGION = os.getenv("AWS_REGION", "ap-southeast-2")
@@ -96,9 +97,14 @@ def process_job(video_id, s3_key, temp_dir="/tmp"):
         txt_path = os.path.join(temp_dir, f"{video_id}.txt")
         
         # Download video from S3
-        print(f"Downloading {s3_key} from S3...")
-        s3.download_file(S3_BUCKET, s3_key, video_path)
-        
+        video_path = "C:\\Users\\aathm\\Videos\\AS3\\HTTPS.mp4"  # destination path
+        local_video = "C:\\Users\\aathm\\Videos\\AS3\\processed\\HTTPS.mp4"  # your local source file
+
+        if os.path.exists(local_video):
+            
+            shutil.copy(local_video, video_path)
+        else:
+            s3.download_file(S3_BUCKET, s3_key, video_path)
         # Transcode to WAV
         print("Extracting audio to WAV...")
         run_ffmpeg_extract_wav(video_path, wav_path)

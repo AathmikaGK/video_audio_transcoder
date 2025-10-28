@@ -113,39 +113,61 @@ def main():
     
     while True:
         try:
-            # Poll SQS for messages (long polling)
+            print(f"⏳ Polling SQS queue... (waiting up to {POLL_WAIT_TIME}s)")
+            
             response = sqs.receive_message(
                 QueueUrl=SQS_QUEUE_URL,
                 MaxNumberOfMessages=MAX_MESSAGES,
                 WaitTimeSeconds=POLL_WAIT_TIME,
-                MessageAttributeNames=['All']
+                
+                MessageAttributeNames=['All'],
+                AttributeNames=['All']  # IMPORTANT: Get receive count
             )
             
             messages = response.get('Messages', [])
             
             if not messages:
-                print("⏳ No messages in queue, waiting...")
+                print("   No messages in queue")
+                consecutive_errors = 0
                 continue
             
-            # Process each message
+            print(f"   Found {len(messages)} message(s)\n")
+            
             for message in messages:
                 receipt_handle = message['ReceiptHandle']
+                message_id = message['MessageId']
+                
+                # Get receive count
+                attributes = message.get('Attributes', {})
+                receive_count = int(attributes.get('ApproximateReceiveCount', 0))
+                
+                print(f"📨 Processing message ID: {message_id}")
+                print(f"   Receive count: {receive_count}")
                 
                 # Process the job
                 success = process_message(message)
                 
                 if success:
-                    # Delete message from queue (job completed successfully)
-                    sqs.delete_message(
-                        QueueUrl=SQS_QUEUE_URL,
-                        ReceiptHandle=receipt_handle
-                    )
-                    print(f"🗑️  Deleted message from queue\n")
+                    # ONLY delete on success
+                    try:
+                        sqs.delete_message(
+                            QueueUrl=SQS_QUEUE_URL,
+                            ReceiptHandle=receipt_handle
+                        )
+                        print(f"🗑️  Deleted message {message_id} from queue\n")
+                    except Exception as e:
+                        print(f"⚠️  Failed to delete message: {e}\n")
                 else:
-                    # Don't delete - message will become visible again for retry
-                    # After 3 failed attempts, will go to DLQ automatically
-                    print(f"⚠️  Message will be retried (or sent to DLQ)\n")
-        
+                    # DON'T delete - let SQS handle retry/DLQ
+                    print(f"⚠️  Message {message_id} NOT deleted (will retry)")
+                    print(f"   Receive count: {receive_count}/3")
+                    
+                    if receive_count >= 2:
+                        print(f"   ⚠️  Next failure will move to DLQ\n")
+                     
+            
+            consecutive_errors = 0
+            
         except KeyboardInterrupt:
             print("\n🛑 Worker stopped by user")
             break
